@@ -19,6 +19,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "otplib": "^13.0.2",
+    "pg": "^8.16.3",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
