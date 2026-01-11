@@ -1,6 +1,7 @@
 import express from "express";
 import dotenv from "dotenv";
 import { initDb } from "./db.js";
+import authRoutes from "./routes/auth.js";
 
 dotenv.config();
 
@@ -12,6 +13,9 @@ await initDb();
 app.get("/", (req, res) => {
   res.send("Two Factor Auth server is running");
 });
+
+// routes
+app.use("/auth", authRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
