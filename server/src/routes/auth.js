@@ -1,6 +1,7 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import { pool } from "../db.js";
+import { v4 as uuidv4 } from "uuid";
 
 const router = express.Router();
 
@@ -36,6 +37,48 @@ router.post("/register", async (req, res) => {
     return res.status(201).json({ user: inserted.rows[0] });
   } catch (err) {
     console.error("REGISTER_ERROR:", err);
+    return res.status(500).json({ error: "internal server error" });
+  }
+});
+
+const loginChallenges = new Map(); // challengeId -> { userId, createdAt }
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "email and password are required" });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    const result = await pool.query(
+      "SELECT id, email, password_hash, twofa_enabled FROM users WHERE email = $1",
+      [normalizedEmail]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(401).json({ error: "invalid credentials" });
+    }
+
+    const user = result.rows[0];
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) {
+      return res.status(401).json({ error: "invalid credentials" });
+    }
+
+    if (!user.twofa_enabled) {
+      return res.status(200).json({ status: "ok", user: { id: user.id, email: user.email } });
+    }
+
+    const challengeId = uuidv4();
+    loginChallenges.set(challengeId, { userId: user.id, createdAt: Date.now() });
+
+    return res.status(200).json({ status: "2fa_required", challengeId });
+  } catch (err) {
+    console.error("LOGIN_ERROR:", err);
     return res.status(500).json({ error: "internal server error" });
   }
 });
