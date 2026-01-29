@@ -21,6 +21,7 @@
     "otplib": "^13.0.2",
     "pg": "^8.16.3",
     "qrcode": "^1.5.4",
+    "speakeasy": "^2.0.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {

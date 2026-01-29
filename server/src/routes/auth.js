@@ -2,6 +2,9 @@ import express from "express";
 import bcrypt from "bcrypt";
 import { pool } from "../db.js";
 import { v4 as uuidv4 } from "uuid";
+import speakeasy from "speakeasy";
+import qrcode from "qrcode";
+import { encrypt } from "../utils/crypto.js";
 
 const router = express.Router();
 
@@ -80,6 +83,54 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error("LOGIN_ERROR:", err);
     return res.status(500).json({ error: "internal server error" });
+  }
+});
+
+// שלב א' של 2FA: יצירת סוד והחזרת QR Code
+router.post("/setup-2fa", async (req, res) => {
+  try {
+    const { email } = req.body; // במערכת אמיתית היינו לוקחים את ה-ID מה-Session/Token
+
+    if (!email) {
+      return res.status(400).json({ error: "Email is required" });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    // 1. בדיקה שהמשתמש קיים
+    const userResult = await pool.query("SELECT * FROM users WHERE email = $1", [normalizedEmail]);
+    if (userResult.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // 2. יצירת סוד חדש (Secret) עבור המשתמש
+    const secret = speakeasy.generateSecret({
+      name: `MyApp (${normalizedEmail})` // השם שיופיע באפליקציית Google Auth
+    });
+
+    // 3. הצפנת הסוד לפני שמירה ב-DB (דרישת אבטחה)
+    const encryptedSecret = encrypt(secret.base32);
+
+    // 4. שמירה ב-DB (עדיין לא מפעילים את ה-2FA, רק שומרים את ההכנה)
+    await pool.query(
+      "UPDATE users SET twofa_secret_enc = $1 WHERE email = $2",
+      [encryptedSecret, normalizedEmail]
+    );
+
+    // 5. יצירת תמונת QR Code
+    // secret.otpauth_url מכיל את כל המידע שהאפליקציה צריכה
+    const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url);
+
+    // 6. החזרה לקליינט
+    res.json({
+      message: "Scan this QR code with Google Authenticator",
+      qrCode: qrCodeUrl, // מחרוזת ארוכה שהיא בעצם תמונה
+      secret: secret.base32 // (אופציונלי) למקרה שהסריקה לא עובדת והמשתמש רוצה להקליד ידנית
+    });
+
+  } catch (err) {
+    console.error("SETUP_2FA_ERROR:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
