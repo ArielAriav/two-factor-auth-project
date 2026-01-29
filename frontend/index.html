@@ -3,78 +3,228 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>מערכת אימות - 2FA</title>
+    <title>מערכת אימות - 2FA Project</title>
     <style>
-        body { font-family: sans-serif; display: flex; justify-content: center; padding: 50px; background: #f4f4f9; }
-        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 350px; }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f0f2f5; margin: 0; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 400px; text-align: center; }
+        h2 { margin-bottom: 20px; color: #333; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button { width: 100%; padding: 12px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 16px; transition: background 0.3s; }
         button:hover { background: #0056b3; }
-        .toggle { text-align: center; margin-top: 15px; cursor: pointer; color: blue; text-decoration: underline; }
-        .message { margin-top: 10px; padding: 10px; border-radius: 4px; display: none; }
-        .error { background: #f8d7da; color: #721c24; }
-        .success { background: #d4edda; color: #155724; }
+        button.secondary { background: #6c757d; margin-top: 10px; }
+        button.secondary:hover { background: #5a6268; }
+        .toggle { margin-top: 15px; cursor: pointer; color: #007bff; text-decoration: underline; font-size: 14px; }
+        .message { margin-top: 15px; padding: 10px; border-radius: 6px; display: none; font-size: 14px; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .hidden { display: none; }
+        #qrImage { max-width: 200px; margin: 20px auto; display: block; }
+        .code-input { letter-spacing: 5px; font-weight: bold; text-align: center; font-size: 20px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2 id="formTitle">התחברות</h2>
     
-    <div id="authForm">
-        <input type="email" id="email" placeholder="אימייל" required>
-        <input type="password" id="password" placeholder="סיסמה" required>
-        <button onclick="handleSubmit()" id="submitBtn">התחבר</button>
+    <div id="authSection">
+        <h2 id="formTitle">התחברות</h2>
+        <input type="email" id="email" placeholder="אימייל" required autocomplete="email">
+        <input type="password" id="password" placeholder="סיסמה" required autocomplete="current-password">
+        <button onclick="handleAuth()" id="submitBtn">התחבר</button>
+        <p class="toggle" onclick="toggleMode()" id="toggleText">אין לך חשבון? הירשם כאן</p>
+    </div>
+
+    <div id="login2faSection" class="hidden">
+        <h2>אימות דו-שלבי</h2>
+        <p>נא להזין את הקוד מ-Google Authenticator</p>
+        <input type="text" id="loginToken" class="code-input" placeholder="XXXXXX" maxlength="6">
+        <button onclick="handleLoginVerify()">אמת וכנס</button>
+    </div>
+
+    <div id="dashboardSection" class="hidden">
+        <h2>ברוך הבא!</h2>
+        <p id="userEmailDisplay"></p>
+        <div id="status2fa" style="margin-bottom: 20px; color: #666;"></div>
+        
+        <div id="setup2faArea">
+            <button onclick="start2faSetup()">הפעל אימות דו-שלבי (2FA)</button>
+        </div>
+
+        <button onclick="logout()" class="secondary">התנתק</button>
+    </div>
+
+    <div id="setupQrSection" class="hidden">
+        <h2>הגדרת 2FA</h2>
+        <p>סרוק את הברקוד באפליקציית Google Authenticator:</p>
+        <img id="qrImage" src="" alt="QR Code">
+        <p>לאחר הסריקה, הזן את הקוד שקיבלת:</p>
+        <input type="text" id="setupToken" class="code-input" placeholder="XXXXXX" maxlength="6">
+        <button onclick="verifySetup()">אמת והפעל</button>
+        <button onclick="cancelSetup()" class="secondary">ביטול</button>
     </div>
 
     <div id="message" class="message"></div>
-    
-    <p class="toggle" onclick="toggleForm()" id="toggleText">אין לך חשבון? הירשם כאן</p>
 </div>
 
 <script>
+    // כתובת השרת ב-Render
     const API_URL = "https://two-factor-auth-project.onrender.com/auth";
-    let isLogin = true;
+    
+    let isLoginMode = true;
+    let currentChallengeId = null;
+    let currentUserEmail = null;
 
-    function toggleForm() {
-        isLogin = !isLogin;
-        document.getElementById('formTitle').innerText = isLogin ? "התחברות" : "הרשמה";
-        document.getElementById('submitBtn').innerText = isLogin ? "התחבר" : "הירשם";
-        document.getElementById('toggleText').innerText = isLogin ? "אין לך חשבון? הירשם כאן" : "כבר יש לך חשבון? התחבר";
+    // --- ניהול תצוגה ---
+    function showMessage(text, type) {
+        const el = document.getElementById('message');
+        el.innerText = text;
+        el.className = `message ${type}`; // success or error
+        el.style.display = 'block';
     }
 
-    async function handleSubmit() {
+    function hideSections() {
+        document.getElementById('authSection').classList.add('hidden');
+        document.getElementById('login2faSection').classList.add('hidden');
+        document.getElementById('dashboardSection').classList.add('hidden');
+        document.getElementById('setupQrSection').classList.add('hidden');
+        document.getElementById('message').style.display = 'none';
+    }
+
+    function toggleMode() {
+        isLoginMode = !isLoginMode;
+        document.getElementById('formTitle').innerText = isLoginMode ? "התחברות" : "הרשמה";
+        document.getElementById('submitBtn').innerText = isLoginMode ? "התחבר" : "הירשם";
+        document.getElementById('toggleText').innerText = isLoginMode ? "אין לך חשבון? הירשם כאן" : "כבר יש לך חשבון? התחבר";
+        document.getElementById('message').style.display = 'none';
+    }
+
+    // --- לוגיקה: הרשמה והתחברות ---
+    async function handleAuth() {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
-        const msgDiv = document.getElementById('message');
         
-        const endpoint = isLogin ? "/login" : "/register";
+        if(!email || !password) return showMessage("נא למלא את כל השדות", "error");
+
+        const endpoint = isLoginMode ? "/login" : "/register";
         
         try {
-            const response = await fetch(API_URL + endpoint, {
+            const res = await fetch(API_URL + endpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ email, password })
             });
+            const data = await res.json();
 
-            const data = await response.json();
+            if (!res.ok) throw new Error(data.error || "שגיאה בשרת");
 
-            if (response.ok) {
-                msgDiv.className = "message success";
+            if (isLoginMode) {
+                // התחברות
                 if (data.status === "2fa_required") {
-                    msgDiv.innerText = "נדרש אימות דו-שלבי! מזהה אתגר: " + data.challengeId;
+                    // מקרה א': צריך קוד 2FA
+                    currentChallengeId = data.challengeId;
+                    currentUserEmail = email; // שומרים בצד
+                    hideSections();
+                    document.getElementById('login2faSection').classList.remove('hidden');
                 } else {
-                    msgDiv.innerText = isLogin ? "התחברת בהצלחה!" : "נרשמת בהצלחה! כעת ניתן להתחבר.";
+                    // מקרה ב': התחברות רגילה
+                    loginSuccess(data.user);
                 }
             } else {
-                msgDiv.className = "message error";
-                msgDiv.innerText = data.error || "אירעה שגיאה";
+                // הרשמה
+                showMessage("נרשמת בהצלחה! כעת ניתן להתחבר.", "success");
+                toggleMode(); // מעביר למצב התחברות
             }
+
         } catch (err) {
-            msgDiv.className = "message error";
-            msgDiv.innerText = "שגיאת תקשורת עם השרת";
+            showMessage(err.message, "error");
         }
-        msgDiv.style.display = "block";
+    }
+
+    // --- לוגיקה: אימות 2FA בכניסה ---
+    async function handleLoginVerify() {
+        const token = document.getElementById('loginToken').value;
+        if(!token) return showMessage("נא להזין קוד", "error");
+
+        try {
+            const res = await fetch(API_URL + "/login-verify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ challengeId: currentChallengeId, token })
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error);
+
+            loginSuccess(data.user);
+
+        } catch (err) {
+            showMessage(err.message, "error");
+        }
+    }
+
+    function loginSuccess(user) {
+        currentUserEmail = user.email;
+        hideSections();
+        document.getElementById('dashboardSection').classList.remove('hidden');
+        document.getElementById('userEmailDisplay').innerText = `מחובר כ: ${user.email}`;
+        
+        // בדיקה פשוטה: אם הגענו לפה, המשתמש מחובר.
+        // במערכת אמיתית היינו שומרים את מצב ה-2FA גם בצד הלקוח כדי לדעת אם להציג את הכפתור
+        // כרגע נציג את כפתור ההפעלה תמיד אלא אם נדע אחרת
+    }
+
+    // --- לוגיקה: הפעלת 2FA (Setup) ---
+    async function start2faSetup() {
+        try {
+            const res = await fetch(API_URL + "/setup-2fa", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: currentUserEmail })
+            });
+            const data = await res.json();
+            
+            if (!res.ok) throw new Error(data.error);
+
+            hideSections();
+            document.getElementById('setupQrSection').classList.remove('hidden');
+            document.getElementById('qrImage').src = data.qrCode;
+
+        } catch (err) {
+            showMessage(err.message, "error");
+        }
+    }
+
+    async function verifySetup() {
+        const token = document.getElementById('setupToken').value;
+        try {
+            const res = await fetch(API_URL + "/verify-2fa", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: currentUserEmail, token })
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error);
+
+            showMessage("2FA הופעל בהצלחה!", "success");
+            setTimeout(() => {
+                hideSections();
+                document.getElementById('dashboardSection').classList.remove('hidden');
+                document.getElementById('setup2faArea').innerHTML = "<b style='color:green'>אימות דו-שלבי פעיל בחשבון זה ✅</b>";
+            }, 2000);
+
+        } catch (err) {
+            showMessage(err.message, "error");
+        }
+    }
+
+    function cancelSetup() {
+        hideSections();
+        document.getElementById('dashboardSection').classList.remove('hidden');
+    }
+
+    function logout() {
+        location.reload(); // פשוט מרענן את הדף
     }
 </script>
 
