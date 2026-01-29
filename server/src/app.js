@@ -21,7 +21,7 @@ const limiter = rateLimit({
 // החמרה ספציפית על נתיבי התחברות
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 דקות
-  max: 10, // מקסימום 10 ניסיונות כושלים להרשמה/התחברות
+  max: 30, // מקסימום 30 ניסיונות כושלים להרשמה/התחברות
   message: { error: "Too many login attempts, please try again later" }
 });
 
@@ -29,7 +29,7 @@ app.use(limiter); // הגנה כללית
 app.use("/auth", authLimiter); // הגנה חזקה על האימות
 
 app.use(cors({
-  origin: "*", // מאפשר גישה מכל מקום (לצורך פיתוח)
+  origin: "https://auth-frontend-eaxz.onrender.com", // מאפשר גישה מכל מקום (לצורך פיתוח)
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   preflightContinue: false,
   optionsSuccessStatus: 204
