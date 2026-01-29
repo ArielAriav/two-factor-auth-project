@@ -134,4 +134,62 @@ router.post("/setup-2fa", async (req, res) => {
   }
 });
 
+// שלב ב' של 2FA: אימות הקוד והפעלת המנגנון ב-DB
+router.post("/verify-2fa", async (req, res) => {
+  try {
+    const { email, token } = req.body;
+
+    if (!email || !token) {
+      return res.status(400).json({ error: "Email and token are required" });
+    }
+
+    const normalizedEmail = String(email).trim().toLowerCase();
+
+    // 1. שליפת המשתמש והסוד המוצפן
+    const result = await pool.query(
+      "SELECT * FROM users WHERE email = $1", 
+      [normalizedEmail]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const user = result.rows[0];
+
+    // אם אין סוד שמור, אי אפשר לאמת
+    if (!user.twofa_secret_enc) {
+      return res.status(400).json({ error: "2FA setup not initiated" });
+    }
+
+    // 2. פענוח הסוד (Decrypt) כדי שנוכל להשתמש בו
+    const secret = decrypt(user.twofa_secret_enc);
+
+    // 3. בדיקה האם הקוד שהמשתמש שלח תואם לסוד
+    // window: 1 מאפשר סטייה של 30 שניות במקרה שהשעונים לא מסונכרנים בול
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: "base32",
+      token: token, 
+      window: 1 
+    });
+
+    if (verified) {
+      // 4. הקוד נכון! מעדכנים ב-DB שהמשתמש הפעיל 2FA בהצלחה
+      await pool.query(
+        "UPDATE users SET twofa_enabled = TRUE WHERE email = $1",
+        [normalizedEmail]
+      );
+      
+      res.json({ status: "success", message: "2FA enabled successfully" });
+    } else {
+      res.status(400).json({ status: "failed", error: "Invalid token" });
+    }
+
+  } catch (err) {
+    console.error("VERIFY_2FA_ERROR:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
