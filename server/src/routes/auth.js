@@ -192,4 +192,62 @@ router.post("/verify-2fa", async (req, res) => {
   }
 });
 
+// שלב ג': סיום ההתחברות - אימות הקוד מול האתגר
+router.post("/login-verify", async (req, res) => {
+  try {
+    const { challengeId, token } = req.body;
+
+    if (!challengeId || !token) {
+      return res.status(400).json({ error: "Challenge ID and token are required" });
+    }
+
+    // 1. בדיקה אם האתגר קיים בזיכרון
+    const challenge = loginChallenges.get(challengeId);
+    if (!challenge) {
+      return res.status(400).json({ error: "Invalid or expired challenge" });
+    }
+
+    // בדיקה אם עבר הזמן (למשל 5 דקות)
+    if (Date.now() - challenge.createdAt > CHALLENGE_TTL_MS) {
+      loginChallenges.delete(challengeId);
+      return res.status(400).json({ error: "Challenge expired" });
+    }
+
+    // 2. שליפת הסוד של המשתמש מה-DB
+    const result = await pool.query("SELECT twofa_secret_enc, email, id FROM users WHERE id = $1", [challenge.userId]);
+    const user = result.rows[0];
+
+    if (!user || !user.twofa_secret_enc) {
+      return res.status(400).json({ error: "User 2FA data not found" });
+    }
+
+    // 3. פענוח ואימות הקוד
+    const secret = decrypt(user.twofa_secret_enc);
+    const verified = speakeasy.totp.verify({
+      secret: secret,
+      encoding: "base32",
+      token: token,
+      window: 1
+    });
+
+    if (verified) {
+      // הצלחה! מוחקים את האתגר כדי שלא ישתמשו בו שוב
+      loginChallenges.delete(challengeId);
+      
+      // כאן מחזירים את המידע הסופי (או Token אמיתי במערכת גדולה)
+      res.json({ 
+        status: "ok", 
+        message: "Login successful",
+        user: { id: user.id, email: user.email }
+      });
+    } else {
+      res.status(401).json({ error: "Invalid 2FA token" });
+    }
+
+  } catch (err) {
+    console.error("LOGIN_VERIFY_ERROR:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
