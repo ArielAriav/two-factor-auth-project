@@ -21,7 +21,7 @@ const limiter = rateLimit({
 // החמרה ספציפית על נתיבי התחברות
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 דקות
-  max: 5, // מקסימום 5 ניסיונות כושלים להרשמה/התחברות
+  max: 10, // מקסימום 10 ניסיונות כושלים להרשמה/התחברות
   message: { error: "Too many login attempts, please try again later" }
 });
 
