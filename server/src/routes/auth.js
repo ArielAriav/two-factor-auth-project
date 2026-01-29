@@ -197,32 +197,37 @@ router.post("/login-verify", async (req, res) => {
   try {
     const { challengeId, token } = req.body;
 
+    // ... (בדיקות תקינות קלט ראשוניות - נשאר אותו דבר) ...
     if (!challengeId || !token) {
       return res.status(400).json({ error: "Challenge ID and token are required" });
     }
 
-    // 1. בדיקה אם האתגר קיים בזיכרון
     const challenge = loginChallenges.get(challengeId);
     if (!challenge) {
       return res.status(400).json({ error: "Invalid or expired challenge" });
     }
 
-    // בדיקה אם עבר הזמן (למשל 5 דקות)
-    if (Date.now() - challenge.createdAt > CHALLENGE_TTL_MS) {
-      loginChallenges.delete(challengeId);
-      return res.status(400).json({ error: "Challenge expired" });
-    }
-
-    // 2. שליפת הסוד של המשתמש מה-DB
-    const result = await pool.query("SELECT twofa_secret_enc, email, id FROM users WHERE id = $1", [challenge.userId]);
+    // שליפת המשתמש כולל נתוני הנעילה
+    const result = await pool.query(
+      "SELECT * FROM users WHERE id = $1", 
+      [challenge.userId]
+    );
     const user = result.rows[0];
 
-    if (!user || !user.twofa_secret_enc) {
-      return res.status(400).json({ error: "User 2FA data not found" });
+    if (!user) return res.status(400).json({ error: "User not found" });
+
+    // --- 1. בדיקה: האם המשתמש נעול? ---
+    if (user.lockout_until && new Date() < new Date(user.lockout_until)) {
+      const remainingMinutes = Math.ceil((new Date(user.lockout_until) - new Date()) / 60000);
+      return res.status(403).json({ 
+        error: `Account is locked due to too many failed attempts. Try again in ${remainingMinutes} minutes.` 
+      });
     }
 
-    // 3. פענוח ואימות הקוד
+    // פענוח הסוד
     const secret = decrypt(user.twofa_secret_enc);
+    
+    // בדיקת הקוד מול Google Authenticator
     const verified = speakeasy.totp.verify({
       secret: secret,
       encoding: "base32",
@@ -231,17 +236,45 @@ router.post("/login-verify", async (req, res) => {
     });
 
     if (verified) {
-      // הצלחה! מוחקים את האתגר כדי שלא ישתמשו בו שוב
+      // --- 2. הצלחה: איפוס המונה ---
+      await pool.query(
+        "UPDATE users SET login_attempts = 0, lockout_until = NULL WHERE id = $1",
+        [user.id]
+      );
+
       loginChallenges.delete(challengeId);
       
-      // כאן מחזירים את המידע הסופי (או Token אמיתי במערכת גדולה)
       res.json({ 
         status: "ok", 
         message: "Login successful",
         user: { id: user.id, email: user.email }
       });
+
     } else {
-      res.status(401).json({ error: "Invalid 2FA token" });
+      // --- 3. כישלון: העלאת המונה ובדיקת נעילה ---
+      let newAttempts = (user.login_attempts || 0) + 1;
+      let lockoutQuery = "UPDATE users SET login_attempts = $1 WHERE id = $2";
+      let queryParams = [newAttempts, user.id];
+
+      // אם הגענו ל-5 ניסיונות - נועלים ל-15 דקות
+      if (newAttempts >= 5) {
+        const lockTime = new Date(Date.now() + 15 * 60000); // עכשיו + 15 דקות
+        lockoutQuery = "UPDATE users SET login_attempts = $1, lockout_until = $2 WHERE id = $3";
+        queryParams = [newAttempts, lockTime, user.id];
+        
+        await pool.query(lockoutQuery, queryParams); // שומרים את הנעילה
+        
+        return res.status(403).json({ 
+          error: "Too many failed attempts. Account locked for 15 minutes." 
+        });
+      }
+
+      // סתם מעדכנים את מספר הניסיונות בלי לנעול עדיין
+      await pool.query(lockoutQuery, queryParams);
+      
+      res.status(401).json({ 
+        error: `Invalid 2FA token. Attempt ${newAttempts}/5` 
+      });
     }
 
   } catch (err) {
