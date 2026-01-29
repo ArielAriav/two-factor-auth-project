@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מערכת אימות - 2FA</title>
+    <style>
+        body { font-family: sans-serif; display: flex; justify-content: center; padding: 50px; background: #f4f4f9; }
+        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 350px; }
+        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
+        button:hover { background: #0056b3; }
+        .toggle { text-align: center; margin-top: 15px; cursor: pointer; color: blue; text-decoration: underline; }
+        .message { margin-top: 10px; padding: 10px; border-radius: 4px; display: none; }
+        .error { background: #f8d7da; color: #721c24; }
+        .success { background: #d4edda; color: #155724; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 id="formTitle">התחברות</h2>
+    
+    <div id="authForm">
+        <input type="email" id="email" placeholder="אימייל" required>
+        <input type="password" id="password" placeholder="סיסמה" required>
+        <button onclick="handleSubmit()" id="submitBtn">התחבר</button>
+    </div>
+
+    <div id="message" class="message"></div>
+    
+    <p class="toggle" onclick="toggleForm()" id="toggleText">אין לך חשבון? הירשם כאן</p>
+</div>
+
+<script>
+    const API_URL = "https://two-factor-auth-project.onrender.com/auth";
+    let isLogin = true;
+
+    function toggleForm() {
+        isLogin = !isLogin;
+        document.getElementById('formTitle').innerText = isLogin ? "התחברות" : "הרשמה";
+        document.getElementById('submitBtn').innerText = isLogin ? "התחבר" : "הירשם";
+        document.getElementById('toggleText').innerText = isLogin ? "אין לך חשבון? הירשם כאן" : "כבר יש לך חשבון? התחבר";
+    }
+
+    async function handleSubmit() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const msgDiv = document.getElementById('message');
+        
+        const endpoint = isLogin ? "/login" : "/register";
+        
+        try {
+            const response = await fetch(API_URL + endpoint, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                msgDiv.className = "message success";
+                if (data.status === "2fa_required") {
+                    msgDiv.innerText = "נדרש אימות דו-שלבי! מזהה אתגר: " + data.challengeId;
+                } else {
+                    msgDiv.innerText = isLogin ? "התחברת בהצלחה!" : "נרשמת בהצלחה! כעת ניתן להתחבר.";
+                }
+            } else {
+                msgDiv.className = "message error";
+                msgDiv.innerText = data.error || "אירעה שגיאה";
+            }
+        } catch (err) {
+            msgDiv.className = "message error";
+            msgDiv.innerText = "שגיאת תקשורת עם השרת";
+        }
+        msgDiv.style.display = "block";
+    }
+</script>
+
+</body>
+</html>
