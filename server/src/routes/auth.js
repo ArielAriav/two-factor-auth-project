@@ -4,7 +4,7 @@ import { pool } from "../db.js";
 import { v4 as uuidv4 } from "uuid";
 import speakeasy from "speakeasy";
 import qrcode from "qrcode";
-import { encrypt } from "../utils/crypto.js";
+import { encrypt, decrypt } from "../utils/crypto.js";
 
 const router = express.Router();
 
