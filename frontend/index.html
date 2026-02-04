@@ -69,14 +69,14 @@
 </div>
 
 <script>
-    // כתובת השרת ב-Render
+    // Server URL on Render
     const API_URL = "https://two-factor-auth-project.onrender.com/auth";
     
     let isLoginMode = true;
     let currentChallengeId = null;
     let currentUserEmail = null;
 
-    // --- ניהול תצוגה ---
+    // --- UI management ---
     function showMessage(text, type) {
         const el = document.getElementById('message');
         el.innerText = text;
@@ -100,7 +100,7 @@
         document.getElementById('message').style.display = 'none';
     }
 
-    // --- לוגיקה: הרשמה והתחברות ---
+    // --- Logic: registration and login ---
     async function handleAuth() {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
@@ -120,21 +120,21 @@
             if (!res.ok) throw new Error(data.error || "שגיאה בשרת");
 
             if (isLoginMode) {
-                // התחברות
+                // Login flow
                 if (data.status === "2fa_required") {
-                    // מקרה א': צריך קוד 2FA
+                    // Case A: 2FA code required
                     currentChallengeId = data.challengeId;
-                    currentUserEmail = email; // שומרים בצד
+                    currentUserEmail = email; // store it for later use
                     hideSections();
                     document.getElementById('login2faSection').classList.remove('hidden');
                 } else {
-                    // מקרה ב': התחברות רגילה
+                    // Case B: regular login
                     loginSuccess(data.user);
                 }
             } else {
-                // הרשמה
+                // Registration
                 showMessage("נרשמת בהצלחה! כעת ניתן להתחבר.", "success");
-                toggleMode(); // מעביר למצב התחברות
+                toggleMode(); // switch to login mode
             }
 
         } catch (err) {
@@ -142,7 +142,7 @@
         }
     }
 
-    // --- לוגיקה: אימות 2FA בכניסה ---
+    // --- Logic: 2FA verification on login ---
     async function handleLoginVerify() {
         const token = document.getElementById('loginToken').value;
         if(!token) return showMessage("נא להזין קוד", "error");
@@ -170,12 +170,12 @@
         document.getElementById('dashboardSection').classList.remove('hidden');
         document.getElementById('userEmailDisplay').innerText = `מחובר כ: ${user.email}`;
         
-        // בדיקה פשוטה: אם הגענו לפה, המשתמש מחובר.
-        // במערכת אמיתית היינו שומרים את מצב ה-2FA גם בצד הלקוח כדי לדעת אם להציג את הכפתור
-        // כרגע נציג את כפתור ההפעלה תמיד אלא אם נדע אחרת
+        // Simple check: if we've reached here, the user is logged in.
+        // In a real system we would store the 2FA state on the client to know whether to show the button
+        // For now we'll always show the setup button unless we know otherwise
     }
 
-    // --- לוגיקה: הפעלת 2FA (Setup) ---
+    // --- Logic: enabling 2FA (Setup) ---
     async function start2faSetup() {
         try {
             const res = await fetch(API_URL + "/setup-2fa", {
@@ -226,7 +226,7 @@
     }
 
     function logout() {
-        location.reload(); // פשוט מרענן את הדף
+        location.reload(); // simply reloads the page
     }
 </script>
 

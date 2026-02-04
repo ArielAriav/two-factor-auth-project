@@ -13,7 +13,7 @@ export const pool = new Pool({
 });
 
 export async function initDb() {
-  // יצירת הטבלה הבסיסית (כמו שהיה קודם)
+  // Creating the basic table (as it was before)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -25,7 +25,7 @@ export async function initDb() {
     );
   `);
 
-  // הוספת עמודות למנגנון הנעילה (אם הן לא קיימות)
+  // Adding lockout mechanism columns (if they don't exist)
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_attempts INT DEFAULT 0;`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS lockout_until TIMESTAMP;`);

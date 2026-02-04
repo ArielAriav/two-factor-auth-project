@@ -1,45 +1,45 @@
-// מגדירים מפתח הצפנה לצורך הבדיקה (לפני שהקוד רץ)
-process.env.ENCRYPTION_KEY = '12345678901234567890123456789012'; // בדיוק 32 תווים
+// Set encryption key for tests (before the code runs)
+process.env.ENCRYPTION_KEY = '12345678901234567890123456789012'; // exactly 32 characters
 
 import { encrypt, decrypt } from "../src/utils/crypto.js";
 import speakeasy from "speakeasy";
 
 describe('Critical Components Security Tests', () => {
 
-    // --- בדיקת רכיב ההצפנה ---
+    // --- Encryption module tests ---
     describe('Encryption Module', () => {
         test('Should encrypt and decrypt text correctly', () => {
             const originalText = "MySecretPassword123";
             
-            // 1. נסה להצפין
+            // 1. Try to encrypt
             const encrypted = encrypt(originalText);
             
-            // בדיקה: הטקסט המוצפן לא צריך להיות שווה למקור
+            // Check: encrypted text should not equal the original
             expect(encrypted).not.toBe(originalText);
-            // בדיקה: הפורמט צריך לכלול IV (סימן נקודתיים)
+            // Check: format should include IV (colon separator)
             expect(encrypted).toContain(':');
 
-            // 2. נסה לפענח
+            // 2. Try to decrypt
             const decrypted = decrypt(encrypted);
             
-            // בדיקה: הטקסט המפעונח חייב להיות זהה למקור
+            // Check: decrypted text must match the original
             expect(decrypted).toBe(originalText);
         });
     });
 
-    // --- בדיקת רכיב ה-2FA ---
+    // --- 2FA component tests ---
     describe('2FA Logic (Speakeasy)', () => {
         test('Should verify a valid token correctly', () => {
-            // 1. נייצר סוד זמני
+            // 1. Generate a temporary secret
             const secret = speakeasy.generateSecret();
             
-            // 2. נייצר טוקן (כאילו המשתמש באפליקציה)
+            // 2. Generate a token (as if from the user's app)
             const token = speakeasy.totp({
                 secret: secret.base32,
                 encoding: 'base32'
             });
 
-            // 3. נבדוק שהשרת יודע לאמת אותו
+            // 3. Verify the server can validate it
             const verified = speakeasy.totp.verify({
                 secret: secret.base32,
                 encoding: 'base32',
@@ -53,7 +53,7 @@ describe('Critical Components Security Tests', () => {
         test('Should reject an invalid token', () => {
             const secret = speakeasy.generateSecret();
             
-            // נמציא טוקן שגוי
+            // Create an invalid token
             const wrongToken = "000000";
 
             const verified = speakeasy.totp.verify({

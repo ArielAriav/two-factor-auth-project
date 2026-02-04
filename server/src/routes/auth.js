@@ -86,10 +86,10 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// שלב א' של 2FA: יצירת סוד והחזרת QR Code
+// Step A of 2FA: create secret and return QR code
 router.post("/setup-2fa", async (req, res) => {
   try {
-    const { email } = req.body; // במערכת אמיתית היינו לוקחים את ה-ID מה-Session/Token
+    const { email } = req.body; // in a real system we would take the user ID from session/token
 
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
@@ -97,35 +97,35 @@ router.post("/setup-2fa", async (req, res) => {
 
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    // 1. בדיקה שהמשתמש קיים
+    // 1. Check that the user exists
     const userResult = await pool.query("SELECT * FROM users WHERE email = $1", [normalizedEmail]);
     if (userResult.rowCount === 0) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // 2. יצירת סוד חדש (Secret) עבור המשתמש
+    // 2. Create a new secret for the user
     const secret = speakeasy.generateSecret({
-      name: `MyApp (${normalizedEmail})` // השם שיופיע באפליקציית Google Auth
+      name: `MyApp (${normalizedEmail})` // the name that will appear in the Google Authenticator app
     });
 
-    // 3. הצפנת הסוד לפני שמירה ב-DB (דרישת אבטחה)
+    // 3. Encrypt the secret before saving to DB (security requirement)
     const encryptedSecret = encrypt(secret.base32);
 
-    // 4. שמירה ב-DB (עדיין לא מפעילים את ה-2FA, רק שומרים את ההכנה)
+    // 4. Save to DB (do not enable 2FA yet, just store the setup)
     await pool.query(
       "UPDATE users SET twofa_secret_enc = $1 WHERE email = $2",
       [encryptedSecret, normalizedEmail]
     );
 
-    // 5. יצירת תמונת QR Code
-    // secret.otpauth_url מכיל את כל המידע שהאפליקציה צריכה
+    // 5. Create QR code image
+    // secret.otpauth_url contains all the information the app needs
     const qrCodeUrl = await qrcode.toDataURL(secret.otpauth_url);
 
-    // 6. החזרה לקליינט
+    // 6. Return to the client
     res.json({
       message: "Scan this QR code with Google Authenticator",
-      qrCode: qrCodeUrl, // מחרוזת ארוכה שהיא בעצם תמונה
-      secret: secret.base32 // (אופציונלי) למקרה שהסריקה לא עובדת והמשתמש רוצה להקליד ידנית
+      qrCode: qrCodeUrl, // a long string which is actually an image
+      secret: secret.base32 // (optional) in case scanning fails and the user wants manual entry
     });
 
   } catch (err) {
@@ -134,7 +134,7 @@ router.post("/setup-2fa", async (req, res) => {
   }
 });
 
-// שלב ב' של 2FA: אימות הקוד והפעלת המנגנון ב-DB
+// Step B of 2FA: verify the code and enable the mechanism in DB
 router.post("/verify-2fa", async (req, res) => {
   try {
     const { email, token } = req.body;
@@ -145,7 +145,7 @@ router.post("/verify-2fa", async (req, res) => {
 
     const normalizedEmail = String(email).trim().toLowerCase();
 
-    // 1. שליפת המשתמש והסוד המוצפן
+    // 1. Retrieve the user and the encrypted secret
     const result = await pool.query(
       "SELECT * FROM users WHERE email = $1", 
       [normalizedEmail]
@@ -157,16 +157,16 @@ router.post("/verify-2fa", async (req, res) => {
 
     const user = result.rows[0];
 
-    // אם אין סוד שמור, אי אפשר לאמת
+    // If there is no stored secret, cannot verify
     if (!user.twofa_secret_enc) {
       return res.status(400).json({ error: "2FA setup not initiated" });
     }
 
-    // 2. פענוח הסוד (Decrypt) כדי שנוכל להשתמש בו
+    // 2. Decrypt the secret so we can use it
     const secret = decrypt(user.twofa_secret_enc);
 
-    // 3. בדיקה האם הקוד שהמשתמש שלח תואם לסוד
-    // window: 1 מאפשר סטייה של 30 שניות במקרה שהשעונים לא מסונכרנים בול
+    // 3. Check whether the code provided by the user matches the secret
+    // window: 1 allows a 30-second drift in case clocks are not perfectly synced
     const verified = speakeasy.totp.verify({
       secret: secret,
       encoding: "base32",
@@ -175,7 +175,7 @@ router.post("/verify-2fa", async (req, res) => {
     });
 
     if (verified) {
-      // 4. הקוד נכון! מעדכנים ב-DB שהמשתמש הפעיל 2FA בהצלחה
+      // 4. Code is correct! Update DB to mark 2FA as enabled for the user
       await pool.query(
         "UPDATE users SET twofa_enabled = TRUE WHERE email = $1",
         [normalizedEmail]
@@ -192,12 +192,12 @@ router.post("/verify-2fa", async (req, res) => {
   }
 });
 
-// שלב ג': סיום ההתחברות - אימות הקוד מול האתגר
+// Step C: finishing login - verify the code against the challenge
 router.post("/login-verify", async (req, res) => {
   try {
     const { challengeId, token } = req.body;
 
-    // ... (בדיקות תקינות קלט ראשוניות - נשאר אותו דבר) ...
+    // ... (initial input validation - unchanged) ...
     if (!challengeId || !token) {
       return res.status(400).json({ error: "Challenge ID and token are required" });
     }
@@ -207,7 +207,7 @@ router.post("/login-verify", async (req, res) => {
       return res.status(400).json({ error: "Invalid or expired challenge" });
     }
 
-    // שליפת המשתמש כולל נתוני הנעילה
+    // Retrieve the user including lockout data
     const result = await pool.query(
       "SELECT * FROM users WHERE id = $1", 
       [challenge.userId]
@@ -216,7 +216,7 @@ router.post("/login-verify", async (req, res) => {
 
     if (!user) return res.status(400).json({ error: "User not found" });
 
-    // --- 1. בדיקה: האם המשתמש נעול? ---
+    // --- 1. Check: is the user locked out? ---
     if (user.lockout_until && new Date() < new Date(user.lockout_until)) {
       const remainingMinutes = Math.ceil((new Date(user.lockout_until) - new Date()) / 60000);
       return res.status(403).json({ 
@@ -224,10 +224,10 @@ router.post("/login-verify", async (req, res) => {
       });
     }
 
-    // פענוח הסוד
+    // Decrypt the secret
     const secret = decrypt(user.twofa_secret_enc);
     
-    // בדיקת הקוד מול Google Authenticator
+    // Verify the code against Google Authenticator
     const verified = speakeasy.totp.verify({
       secret: secret,
       encoding: "base32",
@@ -236,7 +236,7 @@ router.post("/login-verify", async (req, res) => {
     });
 
     if (verified) {
-      // --- 2. הצלחה: איפוס המונה ---
+      // --- 2. Success: reset the counter ---
       await pool.query(
         "UPDATE users SET login_attempts = 0, lockout_until = NULL WHERE id = $1",
         [user.id]
@@ -251,25 +251,25 @@ router.post("/login-verify", async (req, res) => {
       });
 
     } else {
-      // --- 3. כישלון: העלאת המונה ובדיקת נעילה ---
+      // --- 3. Failure: increment counter and check lockout ---
       let newAttempts = (user.login_attempts || 0) + 1;
       let lockoutQuery = "UPDATE users SET login_attempts = $1 WHERE id = $2";
       let queryParams = [newAttempts, user.id];
 
-      // אם הגענו ל-5 ניסיונות - נועלים ל-15 דקות
+      // If we've reached 5 attempts - lock for 15 minutes
       if (newAttempts >= 5) {
-        const lockTime = new Date(Date.now() + 15 * 60000); // עכשיו + 15 דקות
+        const lockTime = new Date(Date.now() + 15 * 60000); // now + 15 minutes
         lockoutQuery = "UPDATE users SET login_attempts = $1, lockout_until = $2 WHERE id = $3";
         queryParams = [newAttempts, lockTime, user.id];
         
-        await pool.query(lockoutQuery, queryParams); // שומרים את הנעילה
+        await pool.query(lockoutQuery, queryParams); // save the lockout
         
         return res.status(403).json({ 
           error: "Too many failed attempts. Account locked for 15 minutes." 
         });
       }
 
-      // סתם מעדכנים את מספר הניסיונות בלי לנעול עדיין
+      // Just update the attempts count without locking yet
       await pool.query(lockoutQuery, queryParams);
       
       res.status(401).json({ 

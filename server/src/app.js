@@ -9,27 +9,27 @@ dotenv.config();
 
 const app = express();
 
-// הגבלת ניסיונות כניסה (Brute Force Protection)
-// חוסם IP שמנסה יותר מ-5 פעמים ב-5 דקות
+// Limit login attempts (Brute Force Protection)
+// Blocks IP trying more than 5 times in 5 minutes
 const limiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 דקות
-  max: 100, // באופן כללי לאפליקציה (נדיב)
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 100, // Generally for the application (generous)
   standardHeaders: true, 
   legacyHeaders: false,
 });
 
-// החמרה ספציפית על נתיבי התחברות
+// Specific hardening on login routes
 const authLimiter = rateLimit({
-  windowMs: 5 * 60 * 1000, // 5 דקות
-  max: 30, // מקסימום 30 ניסיונות כושלים להרשמה/התחברות
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 30, // Maximum of 30 failed registration/login attempts
   message: { error: "Too many login attempts, please try again later" }
 });
 
-app.use(limiter); // הגנה כללית
-app.use("/auth", authLimiter); // הגנה חזקה על האימות
+app.use(limiter); // General protection
+app.use("/auth", authLimiter); // Strong protection on authentication
 
 app.use(cors({
-  origin: "https://auth-frontend-eaxz.onrender.com", // מאפשר גישה מכל מקום (לצורך פיתוח)
+  origin: "https://auth-frontend-eaxz.onrender.com", // Allows access from anywhere (for development purposes)
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   preflightContinue: false,
   optionsSuccessStatus: 204

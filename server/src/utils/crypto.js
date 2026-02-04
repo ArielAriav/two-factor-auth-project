@@ -5,17 +5,17 @@ dotenv.config();
 
 const algorithm = 'aes-256-cbc';
 const key = process.env.ENCRYPTION_KEY; 
-// וודא שהמפתח באורך 32 תווים
+// Ensure the key is exactly 32 characters long
 if (!key || key.length !== 32) {
     throw new Error("ENCRYPTION_KEY must be exactly 32 characters long!");
 }
 
 export function encrypt(text) {
-    const iv = crypto.randomBytes(16); // וקטור אתחול רנדומלי
+    const iv = crypto.randomBytes(16); // Random initialization vector (IV)
     const cipher = crypto.createCipheriv(algorithm, Buffer.from(key), iv);
     let encrypted = cipher.update(text);
     encrypted = Buffer.concat([encrypted, cipher.final()]);
-    // מחזירים את ה-IV ואת הטקסט המוצפן מופרדים בנקודתיים
+    // Return the IV and encrypted text separated by a colon
     return iv.toString('hex') + ':' + encrypted.toString('hex');
 }
 
