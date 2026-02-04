@@ -134,7 +134,10 @@
             } else {
                 // Registration
                 showMessage("נרשמת בהצלחה! כעת ניתן להתחבר.", "success");
-                toggleMode(); // switch to login mode
+
+                setTimeout(() => {
+                    toggleMode(); // switch to login mode after 2 seconds
+                }, 2000);
             }
 
         } catch (err) {
